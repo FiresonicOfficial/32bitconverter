@@ -26,13 +26,19 @@ jobs:
 
       - name: Android Yapısını Hazırla
         run: |
-          # Temel proje dosyalarını sıfırdan oluştur
           mkdir -p app/src/main/java/com/firesonic/converter32
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/assets
 
-          # Repodaki dosyaları uygulamanın yerel belleğine (assets) aktar
-          cp -r $(ls -A | grep -vE '^\.git$|^\.github$|^app$|^build.gradle$|^settings.gradle$') app/src/main/assets/ 2>/dev/null || true
+          # Repodaki dosyaları Android assets dizinine aktar
+          cp -r $(ls -A | grep -vE '^\.git$|^\.github$|^app$|^build.gradle$|^settings.gradle$|^gradle.properties$') app/src/main/assets/ 2>/dev/null || true
+
+          # gradle.properties (Hatayı çözen kilit dosya)
+          cat << 'EOF' > gradle.properties
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.configuration-cache=false
+          EOF
 
           # settings.gradle
           cat << 'EOF' > settings.gradle
@@ -144,9 +150,9 @@ jobs:
           EOF
 
       - name: APK Derle (assembleDebug)
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
-      - name: APK'yı Çıkar (Artifact Olarak İndir)
+      - name: APK Dosyasını İndirilebilir Yap (Artifact)
         uses: actions/upload-artifact@v4
         with:
           name: 32bitconverter-apk
