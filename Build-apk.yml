@@ -1,0 +1,43 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Manuel tetikleme butonu ekler
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repoyu Klonla
+        uses: actions/checkout@v4
+
+      - name: Java (JDK 17) Kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Gradle wrapper iznini ver
+        run: chmod +x gradlew
+        continue-on-error: true
+
+      - name: APK Derle (Assemble Debug)
+        run: |
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug --stacktrace
+          else
+            echo "HATA: gradlew dosyası bulunamadı. Projeye Android Gradle wrapper eklemelisin."
+            exit 1
+          fi
+
+      - name: Üretilen APK'yı Yükle (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 32bitconverter-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
