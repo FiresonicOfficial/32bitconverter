@@ -66,6 +66,9 @@ fun ApkScannerView(
     var latestPatchedRecord by remember { mutableStateOf<PatchedApkRecord?>(null) }
 
     var showPatchDialog by remember { mutableStateOf(false) }
+    var showCloneSettingsDialog by remember { mutableStateOf(false) }
+    var customClonePackageName by remember { mutableStateOf("") }
+    var customCloneAppName by remember { mutableStateOf("") }
     var showAdbDialog by remember { mutableStateOf(false) }
     var showInstalledAppsDialog by remember { mutableStateOf(false) }
     var showFileSelectionUtility by remember { mutableStateOf(false) }
@@ -239,6 +242,14 @@ fun ApkScannerView(
             ApkDetailCard(
                 result = result,
                 onStartPatch = { showPatchDialog = true },
+                onStartClone = {
+                    val sanitized = result.packageName
+                        .replace("com.", "")
+                        .replace(Regex("[^a-zA-Z0-9_]"), "_")
+                    customClonePackageName = "com.bridge64.$sanitized"
+                    customCloneAppName = "[64-Bit] ${result.appName}"
+                    showCloneSettingsDialog = true
+                },
                 onShowAdb = { showAdbDialog = true },
                 onChangeApk = { showFileSelectionUtility = true }
             )
@@ -290,7 +301,9 @@ fun ApkScannerView(
         latestPatchedRecord?.let { record ->
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = AccentGreen.copy(alpha = 0.15f)),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (record.isClonedApp) TechCyan.copy(alpha = 0.15f) else AccentGreen.copy(alpha = 0.15f)
+                ),
                 modifier = Modifier.fillMaxWidth().testTag("patch_success_card")
             ) {
                 Column(
@@ -301,13 +314,34 @@ fun ApkScannerView(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AccentGreen)
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = if (record.isClonedApp) TechCyan else AccentGreen
+                        )
                         Text(
-                            text = "64-Bit APK Hazırlandı!",
+                            text = if (record.isClonedApp) "64-Bit Bağımsız Uygulama Hazır!" else "64-Bit APK Hazırlandı!",
                             fontWeight = FontWeight.Bold,
-                            color = AccentGreen
+                            color = if (record.isClonedApp) TechCyan else AccentGreen
                         )
                     }
+
+                    if (record.isClonedApp) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = DarkSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Yeni Bağımsız Paket Kimliği:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(record.packageName, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TechCyan)
+                                if (!record.clonedAppName.isNullOrBlank()) {
+                                    Text("Uygulama Adı: ${record.clonedAppName}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                    }
+
                     Text(
                         text = "Dosya: ${File(record.patchedFilePath).name} (${formatBytes(record.patchedSizeBytes)})",
                         style = MaterialTheme.typography.bodySmall,
@@ -327,12 +361,15 @@ fun ApkScannerView(
                                 }
                             },
                             shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen, contentColor = Color.Black),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (record.isClonedApp) TechCyan else AccentGreen,
+                                contentColor = Color.Black
+                            ),
                             modifier = Modifier.weight(1f).testTag("install_patched_button")
                         ) {
                             Icon(Icons.Default.GetApp, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Hemen Yükle", fontWeight = FontWeight.Bold)
+                            Text(if (record.isClonedApp) "Yeni Uygulamayı Yükle" else "Hemen Yükle", fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
@@ -480,11 +517,122 @@ fun ApkScannerView(
                             )
                         }
                     }
+
+                    // Option 3: Clone under another application ID and install as 64-bit app
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = DarkSurfaceVariant),
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            showPatchDialog = false
+                            val sanitized = result.packageName
+                                .replace("com.", "")
+                                .replace(Regex("[^a-zA-Z0-9_]"), "_")
+                            customClonePackageName = "com.bridge64.$sanitized"
+                            customCloneAppName = "[64-Bit] ${result.appName}"
+                            showCloneSettingsDialog = true
+                        }
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("3. Başka Bir Uygulama Olarak Klonla ve Yükle", fontWeight = FontWeight.Bold, color = TechCyan)
+                            Text(
+                                "32-bit uygulamayı 64-bit'e dönüştürür ve mevcut uygulamayla çakışmaması için bağımsız yeni bir paket kimliği (örn: com.bridge64...) altında cihazınıza yüklemenizi sağlar.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showPatchDialog = false }) {
+                    Text("İptal")
+                }
+            }
+        )
+    }
+
+    // Clone & Repackage Configuration Dialog
+    if (showCloneSettingsDialog && analysisResult != null) {
+        val result = analysisResult!!
+        AlertDialog(
+            onDismissRequest = { showCloneSettingsDialog = false },
+            title = {
+                Text("Başka Uygulama Altında 64-Bit Yükle", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "32-bit ${result.appName} uygulamasının kodları 64-bit ART mimarisine uyarlanacak ve Android sisteminde ayrı bir uygulama olarak kurulabilmesi için yeni bir kimlikle paketlenecektir.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = customCloneAppName,
+                        onValueChange = { customCloneAppName = it },
+                        label = { Text("Yeni Uygulama Başlığı") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = customClonePackageName,
+                        onValueChange = { customClonePackageName = it },
+                        label = { Text("Yeni Paket Kimliği (Package ID)") },
+                        supportingText = { Text("Örn: com.bridge64.${result.packageName.takeLast(15)}") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = DarkSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Dönüştürme ve Kurulum Özellikleri:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = TechCyan)
+                            Text("• arm64-v8a yerel ikili köprü (ELF64) enjekte edilir", fontSize = 11.sp)
+                            Text("• AndroidManifest binary string pool yeniden yapılandırılır", fontSize = 11.sp)
+                            Text("• Bağımsız paket olarak orijinal uygulamayla yan yana kurulabilir", fontSize = 11.sp)
+                            Text("• Doğrudan Android Paket Yükleyicisi ile kuruluma hazır hale gelir", fontSize = 11.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCloneSettingsDialog = false
+                        startPatching(
+                            context = context,
+                            scope = scope,
+                            result = result,
+                            mode = ApkPatcher.PatchMode.CLONE_UNDER_NEW_APP_AND_CONVERT_64BIT,
+                            targetClonedPackageName = customClonePackageName.ifBlank { "com.bridge64.${result.packageName}" },
+                            targetClonedAppName = customCloneAppName.ifBlank { "[64-Bit] ${result.appName}" },
+                            onProgressUpdate = { p, status ->
+                                patchProgress = p
+                                patchStatusText = status
+                            },
+                            onCompleted = { rec ->
+                                latestPatchedRecord = rec
+                                isPatching = false
+                                patchedRecords = PatchedAppStore.getRecords(context)
+                            }
+                        )
+                        isPatching = true
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TechCyan, contentColor = Color.Black)
+                ) {
+                    Text("Dönüştür ve Paketle", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCloneSettingsDialog = false }) {
                     Text("İptal")
                 }
             }
@@ -645,6 +793,7 @@ fun ApkScannerView(
 private fun ApkDetailCard(
     result: ApkAnalysisResult,
     onStartPatch: () -> Unit,
+    onStartClone: () -> Unit,
     onShowAdb: () -> Unit,
     onChangeApk: () -> Unit
 ) {
@@ -808,25 +957,41 @@ private fun ApkDetailCard(
             }
 
             // Action Buttons
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = onStartPatch,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = TechCyan, contentColor = Color.Black),
-                    modifier = Modifier.weight(1f).testTag("start_patch_button")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("64-Bit Dönüştür", fontWeight = FontWeight.Bold)
+                    Button(
+                        onClick = onStartPatch,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = TechCyan, contentColor = Color.Black),
+                        modifier = Modifier.weight(1f).testTag("start_patch_button")
+                    ) {
+                        Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("64-Bit Dönüştür", fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = onStartClone,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentAmber, contentColor = Color.Black),
+                        modifier = Modifier.weight(1.3f).testTag("start_clone_button")
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Başka Uygulama Olarak Yükle", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
                 }
 
                 OutlinedButton(
                     onClick = onShowAdb,
                     shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f).testTag("show_adb_button")
+                    modifier = Modifier.fillMaxWidth().testTag("show_adb_button")
                 ) {
                     Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -869,11 +1034,41 @@ private fun PatchedRecordItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(20.dp))
+        Icon(
+            imageVector = if (record.isClonedApp) Icons.Default.ContentCopy else Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = if (record.isClonedApp) TechCyan else AccentGreen,
+            modifier = Modifier.size(20.dp)
+        )
         Column(modifier = Modifier.weight(1f)) {
-            Text(record.originalName, fontWeight = FontWeight.Medium, fontSize = 12.sp, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = record.clonedAppName ?: record.originalName,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    maxLines = 1
+                )
+                if (record.isClonedApp) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = TechCyan.copy(alpha = 0.2f)
+                    ) {
+                        Text(
+                            text = "KLON",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TechCyan,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
             Text(
-                text = "${formatBytes(record.patchedSizeBytes)} • ${record.patchMode}",
+                text = if (record.isClonedApp) {
+                    "${record.packageName} • ${formatBytes(record.patchedSizeBytes)}"
+                } else {
+                    "${formatBytes(record.patchedSizeBytes)} • ${record.patchMode}"
+                },
                 fontSize = 10.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
@@ -896,6 +1091,8 @@ private fun startPatching(
     scope: kotlinx.coroutines.CoroutineScope,
     result: ApkAnalysisResult,
     mode: ApkPatcher.PatchMode,
+    targetClonedPackageName: String? = null,
+    targetClonedAppName: String? = null,
     onProgressUpdate: (Float, String) -> Unit,
     onCompleted: (PatchedApkRecord) -> Unit
 ) {
@@ -912,12 +1109,19 @@ private fun startPatching(
                 sourceApkFile = sourceFile,
                 packageName = result.packageName,
                 patchMode = mode,
+                targetClonedPackageName = targetClonedPackageName,
+                targetClonedAppName = targetClonedAppName,
                 onProgress = onProgressUpdate
             )
 
             PatchedAppStore.saveRecord(context, record)
             onCompleted(record)
-            Toast.makeText(context, "64-Bit Dönüştürme Başarılı!", Toast.LENGTH_SHORT).show()
+            val msg = if (record.isClonedApp) {
+                "Yeni Bağımsız Uygulama (${record.packageName}) Başarıyla Hazırlandı!"
+            } else {
+                "64-Bit Dönüştürme Başarılı!"
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(context, "Dönüştürme hatası: ${e.message}", Toast.LENGTH_LONG).show()
         }

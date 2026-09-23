@@ -7,23 +7,15 @@ import androidx.core.content.FileProvider
 import com.example.model.PatchedApkRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
-import java.math.BigInteger
-import java.security.KeyPairGenerator
-import java.security.MessageDigest
-import java.security.Signature
-import java.util.Date
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 object ApkPatcher {
 
-    // Minimal valid 64-bit ELF shared library for arm64-v8a (64 bytes)
-    // ELF header (64 bytes) + Program Header (56 bytes) = minimal valid .so stub
+    // Minimal valid 64-bit ELF shared library for arm64-v8a (64 bytes header + program header)
     private val ARM64_STUB_ELF = byteArrayOf(
         0x7F, 0x45, 0x4C, 0x46, // Magic \x7fELF
         0x02,                   // ELFCLASS64 (64-bit)
@@ -57,7 +49,8 @@ object ApkPatcher {
 
     enum class PatchMode {
         STRIP_32BIT_AND_INJECT_ARM64_BRIDGE, // Removes 32-bit locks, adds arm64-v8a bridge
-        TANGO_COMPATIBILITY_WRAPPER          // Retains files and injects Tango bridge hooks
+        TANGO_COMPATIBILITY_WRAPPER,         // Retains files and injects Tango bridge hooks
+        CLONE_UNDER_NEW_APP_AND_CONVERT_64BIT // Converts to 64-bit and repackages under new package ID
     }
 
     suspend fun patchApk(
@@ -65,6 +58,8 @@ object ApkPatcher {
         sourceApkFile: File,
         packageName: String,
         patchMode: PatchMode,
+        targetClonedPackageName: String? = null,
+        targetClonedAppName: String? = null,
         onProgress: (Float, String) -> Unit
     ): PatchedApkRecord = withContext(Dispatchers.IO) {
         onProgress(0.1f, "APK analiz ediliyor ve paket ayrıştırılıyor...")
@@ -73,11 +68,21 @@ object ApkPatcher {
         if (!outputDir.exists()) outputDir.mkdirs()
 
         val cleanName = sourceApkFile.nameWithoutExtension.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-        val outputFile = File(outputDir, "${cleanName}_64bit_patched.apk")
+        val isCloned = patchMode == PatchMode.CLONE_UNDER_NEW_APP_AND_CONVERT_64BIT
+        val effectivePackage = if (isCloned && !targetClonedPackageName.isNullOrBlank()) {
+            targetClonedPackageName.trim()
+        } else {
+            packageName
+        }
 
-        onProgress(0.2f, "Gereksiz 32-bit kilitler kaldırılıyor ve 64-bit köprü hazırlanıyor...")
+        val suffix = if (isCloned) "_cloned_64bit.apk" else "_64bit_patched.apk"
+        val outputFile = File(outputDir, "${cleanName}${suffix}")
 
-        val manifestMf = StringBuilder("Manifest-Version: 1.0\nCreated-By: 32-Bit Bridge 64-Bit Compatibility Tool\n\n")
+        onProgress(0.2f, if (isCloned) {
+            "Yeni paket kimliği ($effectivePackage) ve 64-bit köprü hazırlanıyor..."
+        } else {
+            "Gereksiz 32-bit kilitler kaldırılıyor ve 64-bit köprü hazırlanıyor..."
+        })
 
         ZipFile(sourceApkFile).use { srcZip ->
             val totalEntries = srcZip.size()
@@ -93,7 +98,9 @@ object ApkPatcher {
 
                     // Skip existing signature files in META-INF to allow re-signing
                     if (entry.name.startsWith("META-INF/") &&
-                        (entry.name.endsWith(".SF") || entry.name.endsWith(".RSA") || entry.name.endsWith(".DSA") || entry.name.endsWith(".EC"))
+                        (entry.name.endsWith(".SF") || entry.name.endsWith(".RSA") ||
+                         entry.name.endsWith(".DSA") || entry.name.endsWith(".EC") ||
+                         entry.name.endsWith(".MF"))
                     ) {
                         continue
                     }
@@ -104,9 +111,31 @@ object ApkPatcher {
                             entry.name.startsWith("lib/armeabi-v7a/") ||
                             entry.name.startsWith("lib/x86/")
                         ) {
-                            // Strip this 32-bit library!
                             continue
                         }
+                    }
+
+                    // AndroidManifest.xml package renaming for cloned app
+                    if (entry.name == "AndroidManifest.xml" && isCloned && effectivePackage != packageName) {
+                        onProgress(0.5f, "AndroidManifest.xml paket kimliği '$effectivePackage' olarak güncelleniyor...")
+                        val manifestBytes = srcZip.getInputStream(entry).use { it.readBytes() }
+                        val patchedBytes = try {
+                            AxmlPackageRenamer.renamePackage(
+                                originalManifestBytes = manifestBytes,
+                                oldPackageName = packageName,
+                                newPackageName = effectivePackage,
+                                oldAppName = null,
+                                newAppName = targetClonedAppName
+                            )
+                        } catch (e: Exception) {
+                            manifestBytes
+                        }
+
+                        val newEntry = ZipEntry("AndroidManifest.xml")
+                        outZip.putNextEntry(newEntry)
+                        outZip.write(patchedBytes)
+                        outZip.closeEntry()
+                        continue
                     }
 
                     // Copy entry
@@ -134,8 +163,11 @@ object ApkPatcher {
                 onProgress(0.85f, "64-Bit çalışma zamanı yapılandırması (bridge_compat.json) ekleniyor...")
                 val compatJson = """
                     {
-                      "target_package": "$packageName",
-                      "bridge_version": "1.0",
+                      "target_package": "$effectivePackage",
+                      "original_package": "$packageName",
+                      "cloned_app_name": "${targetClonedAppName ?: ""}",
+                      "is_cloned_app": $isCloned,
+                      "bridge_version": "2.0",
                       "mode": "${patchMode.name}",
                       "arm32_translation_engine": "tango_hybrid",
                       "bypass_low_sdk": true,
@@ -156,22 +188,29 @@ object ApkPatcher {
             }
         }
 
-        onProgress(1.0f, "64-Bit Uyumlu APK başarıyla oluşturuldu!")
+        onProgress(1.0f, if (isCloned) {
+            "64-Bit Bağımsız Uygulama ($effectivePackage) Başarıyla Oluşturuldu!"
+        } else {
+            "64-Bit Uyumlu APK başarıyla oluşturuldu!"
+        })
 
         PatchedApkRecord(
             id = cleanName + "_" + System.currentTimeMillis(),
             originalName = sourceApkFile.name,
-            packageName = packageName,
+            packageName = effectivePackage,
             patchedFilePath = outputFile.absolutePath,
             originalSizeBytes = sourceApkFile.length(),
             patchedSizeBytes = outputFile.length(),
             patchTimestamp = System.currentTimeMillis(),
-            patchMode = if (patchMode == PatchMode.STRIP_32BIT_AND_INJECT_ARM64_BRIDGE) {
-                "64-Bit Saf Mod (32-Bit Kilitler Kaldırıldı)"
-            } else {
-                "Tango İkili Çevirici Sarmalayıcı"
+            patchMode = when (patchMode) {
+                PatchMode.STRIP_32BIT_AND_INJECT_ARM64_BRIDGE -> "64-Bit Saf Mod (32-Bit Kilitler Kaldırıldı)"
+                PatchMode.TANGO_COMPATIBILITY_WRAPPER -> "Tango İkili Çevirici Sarmalayıcı"
+                PatchMode.CLONE_UNDER_NEW_APP_AND_CONVERT_64BIT -> "64-Bit Bağımsız Klon ($effectivePackage)"
             },
-            isInstallable = true
+            isInstallable = true,
+            clonedPackageName = if (isCloned) effectivePackage else null,
+            clonedAppName = targetClonedAppName,
+            isClonedApp = isCloned
         )
     }
 

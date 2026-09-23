@@ -64,7 +64,10 @@ data class PatchedApkRecord(
     val patchedSizeBytes: Long,
     val patchTimestamp: Long,
     val patchMode: String,
-    val isInstallable: Boolean
+    val isInstallable: Boolean,
+    val clonedPackageName: String? = null,
+    val clonedAppName: String? = null,
+    val isClonedApp: Boolean = false
 )
 
 data class ArmRegisterState(

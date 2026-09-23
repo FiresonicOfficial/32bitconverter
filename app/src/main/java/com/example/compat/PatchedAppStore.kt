@@ -31,7 +31,10 @@ object PatchedAppStore {
                         patchedSizeBytes = obj.getLong("patchedSizeBytes"),
                         patchTimestamp = obj.getLong("patchTimestamp"),
                         patchMode = obj.getString("patchMode"),
-                        isInstallable = file.exists()
+                        isInstallable = file.exists(),
+                        clonedPackageName = obj.optString("clonedPackageName", null),
+                        clonedAppName = obj.optString("clonedAppName", null),
+                        isClonedApp = obj.optBoolean("isClonedApp", false)
                     )
                 )
             }
@@ -55,6 +58,9 @@ object PatchedAppStore {
                 put("patchedSizeBytes", item.patchedSizeBytes)
                 put("patchTimestamp", item.patchTimestamp)
                 put("patchMode", item.patchMode)
+                item.clonedPackageName?.let { put("clonedPackageName", it) }
+                item.clonedAppName?.let { put("clonedAppName", it) }
+                put("isClonedApp", item.isClonedApp)
             }
             array.put(obj)
         }
