@@ -68,6 +68,7 @@ fun ApkScannerView(
     var showPatchDialog by remember { mutableStateOf(false) }
     var showAdbDialog by remember { mutableStateOf(false) }
     var showInstalledAppsDialog by remember { mutableStateOf(false) }
+    var showFileSelectionUtility by remember { mutableStateOf(false) }
     var installedAppsList by remember { mutableStateOf<List<InstalledAppBrief>>(emptyList()) }
     var isLoadingInstalledApps by remember { mutableStateOf(false) }
 
@@ -75,7 +76,7 @@ fun ApkScannerView(
 
     // File picker launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -110,62 +111,105 @@ fun ApkScannerView(
             letterSpacing = 1.sp
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        // File Selection Utility Hero Card
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.fillMaxWidth().testTag("file_selection_utility_card")
         ) {
-            Button(
-                onClick = { filePickerLauncher.launch("application/vnd.android.package-archive") },
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = TechCyan, contentColor = Color.Black),
-                modifier = Modifier.weight(1f).testTag("select_apk_button")
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("APK Seç", fontWeight = FontWeight.Bold)
-            }
-
-            OutlinedButton(
-                onClick = {
-                    showInstalledAppsDialog = true
-                    scope.launch {
-                        isLoadingInstalledApps = true
-                        installedAppsList = loadInstalledApps(context)
-                        isLoadingInstalledApps = false
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(TechCyan.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.DriveFolderUpload, contentDescription = null, tint = TechCyan, modifier = Modifier.size(24.dp))
                     }
-                },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f).testTag("scan_installed_button")
-            ) {
-                Icon(Icons.Default.Apps, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Yüklüleri Tara")
-            }
-        }
-
-        // Demo 32-Bit APK generator button for quick testing
-        OutlinedButton(
-            onClick = {
-                scope.launch {
-                    isAnalyzing = true
-                    try {
-                        val demoFile = createDemo32BitApk(context)
-                        val result = ApkAnalyzer.analyzeApkFile(context, demoFile, null)
-                        analysisResult = result
-                        Toast.makeText(context, "Örnek 32-Bit APK yüklendi!", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Örnek oluşturulamadı: ${e.message}", Toast.LENGTH_SHORT).show()
-                    } finally {
-                        isAnalyzing = false
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Dosya Seçim Aracı",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Depolamadaki 32-bit APK'ları seçin veya otomatik tarayın",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-            },
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().testTag("generate_sample_apk_button")
-        ) {
-            Icon(Icons.Default.Science, contentDescription = null, tint = TechCyan, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Örnek 32-Bit APK Test Et (Demo Paketi)", color = TechCyan)
+
+                Button(
+                    onClick = { showFileSelectionUtility = true },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = TechCyan, contentColor = Color.Black),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("open_file_selection_utility_button")
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Depolamadan APK Seç / Tara", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            showInstalledAppsDialog = true
+                            scope.launch {
+                                isLoadingInstalledApps = true
+                                installedAppsList = loadInstalledApps(context)
+                                isLoadingInstalledApps = false
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f).testTag("scan_installed_button")
+                    ) {
+                        Icon(Icons.Default.Apps, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Yüklüleri Tara", fontSize = 12.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                isAnalyzing = true
+                                try {
+                                    val demoFile = createDemo32BitApk(context)
+                                    val result = ApkAnalyzer.analyzeApkFile(context, demoFile, null)
+                                    analysisResult = result
+                                    Toast.makeText(context, "Örnek 32-Bit APK yüklendi!", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Örnek oluşturulamadı: ${e.message}", Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    isAnalyzing = false
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f).testTag("generate_sample_apk_button")
+                    ) {
+                        Icon(Icons.Default.Science, contentDescription = null, tint = TechCyan, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Demo APK", fontSize = 12.sp, color = TechCyan)
+                    }
+                }
+            }
         }
 
         // Analysis Loading indicator
@@ -195,7 +239,8 @@ fun ApkScannerView(
             ApkDetailCard(
                 result = result,
                 onStartPatch = { showPatchDialog = true },
-                onShowAdb = { showAdbDialog = true }
+                onShowAdb = { showAdbDialog = true },
+                onChangeApk = { showFileSelectionUtility = true }
             )
         }
 
@@ -561,13 +606,47 @@ fun ApkScannerView(
             }
         )
     }
+
+    // File Selection Utility Modal
+    if (showFileSelectionUtility) {
+        FileSelectionUtilityModal(
+            onApkUriSelected = { uri ->
+                scope.launch {
+                    isAnalyzing = true
+                    try {
+                        val result = ApkAnalyzer.analyzeApkFromUri(context, uri)
+                        analysisResult = result
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "APK analiz edilemedi: ${e.message}", Toast.LENGTH_LONG).show()
+                    } finally {
+                        isAnalyzing = false
+                    }
+                }
+            },
+            onApkFileSelected = { file ->
+                scope.launch {
+                    isAnalyzing = true
+                    try {
+                        val result = ApkAnalyzer.analyzeApkFile(context, file, null)
+                        analysisResult = result
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "APK analiz edilemedi: ${e.message}", Toast.LENGTH_LONG).show()
+                    } finally {
+                        isAnalyzing = false
+                    }
+                }
+            },
+            onDismissRequest = { showFileSelectionUtility = false }
+        )
+    }
 }
 
 @Composable
 private fun ApkDetailCard(
     result: ApkAnalysisResult,
     onStartPatch: () -> Unit,
-    onShowAdb: () -> Unit
+    onShowAdb: () -> Unit,
+    onChangeApk: () -> Unit
 ) {
     val verdictColor = when (result.verdict) {
         CompatibilityVerdict.NATIVE_64_BIT -> AccentGreen
@@ -598,7 +677,7 @@ private fun ApkDetailCard(
             // Header Row
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Box(
                     modifier = Modifier
@@ -623,6 +702,21 @@ private fun ApkDetailCard(
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+                IconButton(
+                    onClick = onChangeApk,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(DarkSurfaceVariant)
+                        .testTag("change_apk_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DriveFolderUpload,
+                        contentDescription = "Farklı APK Seç",
+                        tint = TechCyan,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

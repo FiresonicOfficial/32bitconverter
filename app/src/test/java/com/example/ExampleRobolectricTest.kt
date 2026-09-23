@@ -42,4 +42,18 @@ class ExampleRobolectricTest {
     emulator.runAll()
     assertTrue(emulator.consoleOutput.any { it.contains("KONSOL ÇIKTISI") })
   }
+
+  @Test
+  fun `verify file selection utility recents and storage scanner`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val testApk = java.io.File(context.cacheDir, "test_sample.apk")
+    testApk.writeText("fake apk binary")
+
+    com.example.compat.FileSelectionUtility.recordRecentlySelectedApk(context, testApk)
+    val recents = com.example.compat.FileSelectionUtility.getRecentlySelectedApks(context)
+    assertTrue(recents.any { it.name == "test_sample.apk" })
+
+    val scanned = com.example.compat.FileSelectionUtility.scanStorageForApks(context)
+    assertNotNull(scanned)
+  }
 }

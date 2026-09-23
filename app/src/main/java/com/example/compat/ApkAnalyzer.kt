@@ -17,17 +17,19 @@ import java.util.zip.ZipInputStream
 object ApkAnalyzer {
 
     suspend fun analyzeApkFromUri(context: Context, uri: Uri): ApkAnalysisResult = withContext(Dispatchers.IO) {
-        // Copy to temporary cache file for reliable random access and analysis
-        val tempFile = File(context.cacheDir, "inspect_target_${System.currentTimeMillis()}.apk")
+        val originalName = FileSelectionUtility.extractDisplayNameFromUri(context, uri)
+        val tempFile = File(context.cacheDir, "input_${System.currentTimeMillis()}_$originalName")
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 tempFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
-            analyzeApkFile(context, tempFile, uri)
+            val result = analyzeApkFile(context, tempFile, uri)
+            FileSelectionUtility.recordRecentlySelectedApk(context, tempFile)
+            result.copy(fileName = originalName)
         } finally {
-            // Keep temp file if needed for patching, or clean up later
+            // Keep temp file if needed for patching
         }
     }
 

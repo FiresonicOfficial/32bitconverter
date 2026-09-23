@@ -99,3 +99,12 @@ data class DisassembledInstruction(
     val translatedArm64Operands: String,
     val explanation: String
 )
+
+data class DiscoveredApkFile(
+    val file: java.io.File,
+    val name: String,
+    val sizeBytes: Long,
+    val lastModified: Long,
+    val directoryCategory: String,
+    val isSuggested32Bit: Boolean = false
+)
