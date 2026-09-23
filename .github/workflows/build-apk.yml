@@ -3,158 +3,41 @@ name: Build Android APK
 on:
   push:
     branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build 32-Bit Bridge APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repoyu Klonla
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: JDK 17 Hazırla
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
+          cache: 'gradle'
 
-      - name: Gradle Kur
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.5'
-
-      - name: Android Yapısını Hazırla
+      - name: Prepare Keystore and Environment
         run: |
-          mkdir -p app/src/main/java/com/firesonic/converter32
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/assets
+          touch .env
+          if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+          chmod +x gradlew
 
-          # Repodaki dosyaları Android assets dizinine aktar
-          cp -r $(ls -A | grep -vE '^\.git$|^\.github$|^app$|^build.gradle$|^settings.gradle$|^gradle.properties$') app/src/main/assets/ 2>/dev/null || true
+      - name: Build Debug APK with Gradle
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-          # gradle.properties (Hatayı çözen kilit dosya)
-          cat << 'EOF' > gradle.properties
-          android.useAndroidX=true
-          android.enableJetifier=true
-          org.gradle.configuration-cache=false
-          EOF
-
-          # settings.gradle
-          cat << 'EOF' > settings.gradle
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = "32bitconverter"
-          include ':app'
-          EOF
-
-          # build.gradle (Root)
-          cat << 'EOF' > build.gradle
-          plugins {
-              id 'com.android.application' version '8.2.2' apply false
-          }
-          EOF
-
-          # app/build.gradle
-          cat << 'EOF' > app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
-
-          android {
-              namespace 'com.firesonic.converter32'
-              compileSdk 34
-
-              defaultConfig {
-                  applicationId "com.firesonic.converter32"
-                  minSdk 21
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                  }
-              }
-          }
-
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-          }
-          EOF
-
-          # app/src/main/AndroidManifest.xml
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application
-                  android:allowBackup="true"
-                  android:label="32Bit Converter"
-                  android:supportsRtl="true"
-                  android:theme="@android:style/Theme.DeviceDefault">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-          # app/src/main/res/values/strings.xml
-          cat << 'EOF' > app/src/main/res/values/strings.xml
-          <resources>
-              <string name="app_name">32Bit Converter</string>
-          </resources>
-          EOF
-
-          # app/src/main/java/com/firesonic/converter32/MainActivity.java
-          cat << 'EOF' > app/src/main/java/com/firesonic/converter32/MainActivity.java
-          package com.firesonic.converter32;
-
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.widget.TextView;
-          import android.widget.ScrollView;
-
-          public class MainActivity extends Activity {
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  ScrollView sv = new ScrollView(this);
-                  TextView tv = new TextView(this);
-                  tv.setPadding(40, 40, 40, 40);
-                  tv.setTextSize(16);
-                  tv.setText("32Bit Converter Çalışıyor.\nYerel motor hazır.");
-                  sv.addView(tv);
-                  setContentView(sv);
-              }
-          }
-          EOF
-
-      - name: APK Derle (assembleDebug)
-        run: gradle assembleDebug --no-daemon --no-configuration-cache --stacktrace
-
-      - name: APK Dosyasını İndirilebilir Yap (Artifact)
+      - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 32bitconverter-apk
+          name: 32bit-bridge-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          retention-days: 7
+          if-no-files-found: error
+          retention-days: 14
