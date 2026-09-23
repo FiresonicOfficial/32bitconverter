@@ -82,21 +82,19 @@ fun FileSelectionUtilityModal(
         }
     }
 
-    AlertDialog(
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismissRequest,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp)
-            .testTag("file_selection_utility_dialog"),
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth(0.94f)
                 .heightIn(max = 680.dp)
+                .padding(vertical = 12.dp)
+                .testTag("file_selection_utility_dialog")
         ) {
             Column(
                 modifier = Modifier
