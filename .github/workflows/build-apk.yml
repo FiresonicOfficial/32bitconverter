@@ -7,6 +7,10 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+
 jobs:
   build:
     name: Build 32-Bit Bridge APK
@@ -16,6 +20,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js (Latest Stable)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -23,8 +32,13 @@ jobs:
           java-version: '21'
           cache: 'gradle'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK & Accept Licenses
         uses: android-actions/setup-android@v3
+
+      - name: Install Android 36 SDK Platform & Tools
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
 
       - name: Prepare Keystore and Environment
         run: |
@@ -37,6 +51,9 @@ jobs:
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
           chmod +x gradlew
+
+      - name: Resolve Gradle Dependencies
+        run: ./gradlew dependencies --no-daemon --stacktrace
 
       - name: Build Debug APK with Gradle
         run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
