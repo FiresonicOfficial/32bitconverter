@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.compat.SystemAbiAuditor
+import com.example.ui.Android9EmulatorView
 import com.example.ui.ApkScannerView
 import com.example.ui.GuidesView
 import com.example.ui.SystemAuditView
@@ -31,6 +32,7 @@ import com.example.ui.theme.TechCyan
 enum class AppNavTab(val label: String) {
     AUDIT("Denetim"),
     SCAN_AND_PATCH("APK Çevirici"),
+    ANDROID9_VM("Android 9"),
     EMULATOR("İkili Çeviri"),
     GUIDES("Rehber")
 }
@@ -39,6 +41,9 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            window.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
+        }
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
@@ -115,7 +120,7 @@ class MainActivity : ComponentActivity() {
                                 selected = selectedTab == AppNavTab.SCAN_AND_PATCH,
                                 onClick = { selectedTab = AppNavTab.SCAN_AND_PATCH },
                                 icon = { Icon(Icons.Default.Build, contentDescription = "APK Çevirici") },
-                                label = { Text("APK Çevirici", fontSize = 11.sp) },
+                                label = { Text("APK Çevirici", fontSize = 10.sp) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = Color.Black,
                                     indicatorColor = TechCyan
@@ -124,10 +129,22 @@ class MainActivity : ComponentActivity() {
                             )
 
                             NavigationBarItem(
+                                selected = selectedTab == AppNavTab.ANDROID9_VM,
+                                onClick = { selectedTab = AppNavTab.ANDROID9_VM },
+                                icon = { Icon(Icons.Default.PhoneAndroid, contentDescription = "Android 9 VM") },
+                                label = { Text("Android 9", fontSize = 10.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color.Black,
+                                    indicatorColor = TechCyan
+                                ),
+                                modifier = Modifier.testTag("nav_android9_vm")
+                            )
+
+                            NavigationBarItem(
                                 selected = selectedTab == AppNavTab.EMULATOR,
                                 onClick = { selectedTab = AppNavTab.EMULATOR },
                                 icon = { Icon(Icons.Default.Transform, contentDescription = "İkili Çeviri") },
-                                label = { Text("İkili Çeviri", fontSize = 11.sp) },
+                                label = { Text("İkili Çeviri", fontSize = 10.sp) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = Color.Black,
                                     indicatorColor = TechCyan
@@ -139,7 +156,7 @@ class MainActivity : ComponentActivity() {
                                 selected = selectedTab == AppNavTab.GUIDES,
                                 onClick = { selectedTab = AppNavTab.GUIDES },
                                 icon = { Icon(Icons.Default.MenuBook, contentDescription = "Rehber") },
-                                label = { Text("Rehber", fontSize = 11.sp) },
+                                label = { Text("Rehber", fontSize = 10.sp) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = Color.Black,
                                     indicatorColor = TechCyan
@@ -159,7 +176,12 @@ class MainActivity : ComponentActivity() {
                                 deviceInfo = deviceInfo,
                                 onRefresh = { deviceInfo = SystemAbiAuditor.auditDevice() }
                             )
-                            AppNavTab.SCAN_AND_PATCH -> ApkScannerView()
+                            AppNavTab.SCAN_AND_PATCH -> ApkScannerView(
+                                onNavigateToEmulator = { selectedTab = AppNavTab.ANDROID9_VM }
+                            )
+                            AppNavTab.ANDROID9_VM -> Android9EmulatorView(
+                                onNavigateToPatcher = { selectedTab = AppNavTab.SCAN_AND_PATCH }
+                            )
                             AppNavTab.EMULATOR -> TranslationSandboxView()
                             AppNavTab.GUIDES -> GuidesView()
                         }

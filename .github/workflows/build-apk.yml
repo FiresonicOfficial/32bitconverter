@@ -7,8 +7,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
-env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -18,12 +19,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Set up Node.js (Latest Stable LTS)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          check-latest: true
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -37,17 +32,16 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || yes | sdkmanager --licenses || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" || sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
 
-      - name: Configure gradle.properties and Environment
+      - name: Configure Gradle Environment
         run: |
           touch gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
           echo "org.gradle.configuration-cache=false" >> gradle.properties
           echo "org.gradle.caching=false" >> gradle.properties
-          echo "org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8" >> gradle.properties
           echo "org.gradle.workers.max=2" >> gradle.properties
           echo "kotlin.compiler.execution.strategy=in-process" >> gradle.properties
-          echo "googleServices.missing.passthrough=true" >> gradle.properties
           touch .env
           touch .env.example
           if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
@@ -58,16 +52,33 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Resolve and Download All Gradle Dependencies
-        run: ./gradlew buildEnvironment :app:dependencies --no-daemon --stacktrace || true
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache --no-build-cache --stacktrace
 
-      - name: Build Debug APK with Gradle
+      - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --no-build-cache --stacktrace
+
+      - name: Generate Checksums & Step Summary
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/*.apk dist/ || true
+          cd dist
+          sha256sum *.apk > sha256_checksums.txt || true
+          echo "### 📦 Android 32-Bit Bridge Build" >> $GITHUB_STEP_SUMMARY
+          echo "| Dosya Adı | Boyut | SHA-256 |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          for f in *.apk; do
+            if [ -f "$f" ]; then
+              sz=$(ls -lh "$f" | awk '{print $5}')
+              hsh=$(sha256sum "$f" | awk '{print $1}')
+              echo "| \`$f\` | $sz | \`${hsh:0:16}...\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: 32bit-bridge-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: dist/*
           if-no-files-found: error
           retention-days: 14

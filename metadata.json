@@ -1,6 +1,6 @@
 {
   "name": "32-Bit Bridge",
-  "description": "32-bit (ARMv7) uyumluluk katmanı, APK 64-bit dönüştürücü ve 64-bit-only sistemler için ikili çeviri yöneticisi.",
+  "description": "32-bit (ARMv7) uyumluluk katmanı, APK 64-bit dönüştürücü, dahili Android 9 64-bit sanal emülatör ve aktarılan APK'ların mimari (32/64-bit) analiz ve listeleme sistemi.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

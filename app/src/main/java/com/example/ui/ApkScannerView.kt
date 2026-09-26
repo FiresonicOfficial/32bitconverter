@@ -22,6 +22,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.compat.AdbScriptGenerator
+import com.example.compat.Android9VirtualEnvironment
 import com.example.compat.ApkAnalyzer
 import com.example.compat.ApkPatcher
 import com.example.compat.PatchedAppStore
@@ -52,7 +55,8 @@ import java.util.zip.ZipOutputStream
 
 @Composable
 fun ApkScannerView(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateToEmulator: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -71,6 +75,7 @@ fun ApkScannerView(
     var customCloneAppName by remember { mutableStateOf("") }
     var showAdbDialog by remember { mutableStateOf(false) }
     var showInstalledAppsDialog by remember { mutableStateOf(false) }
+    var showArchitectureAnalyzerModal by remember { mutableStateOf(false) }
     var showFileSelectionUtility by remember { mutableStateOf(false) }
     var installedAppsList by remember { mutableStateOf<List<InstalledAppBrief>>(emptyList()) }
     var isLoadingInstalledApps by remember { mutableStateOf(false) }
@@ -251,7 +256,38 @@ fun ApkScannerView(
                     showCloneSettingsDialog = true
                 },
                 onShowAdb = { showAdbDialog = true },
-                onChangeApk = { showFileSelectionUtility = true }
+                onChangeApk = { showFileSelectionUtility = true },
+                onTransferToEmulator = {
+                    scope.launch {
+                        val path = result.sourceFilePath
+                        val file = if (path != null) File(path) else null
+                        if (file != null && file.exists()) {
+                            val res = Android9VirtualEnvironment.installApkFile(context, file, result.appName, false)
+                            res.onSuccess {
+                                Toast.makeText(context, "${result.appName} Android 9 Emülatörüne aktarıldı!", Toast.LENGTH_SHORT).show()
+                                onNavigateToEmulator()
+                            }.onFailure {
+                                Toast.makeText(context, "Hata: ${it.message}", Toast.LENGTH_LONG).show()
+                            }
+                        } else if (result.sourceUri != null) {
+                            val res = Android9VirtualEnvironment.installApkFromUri(context, result.sourceUri)
+                            res.onSuccess {
+                                Toast.makeText(context, "${result.appName} Android 9 Emülatörüne aktarıldı!", Toast.LENGTH_SHORT).show()
+                                onNavigateToEmulator()
+                            }.onFailure {
+                                Toast.makeText(context, "Hata: ${it.message}", Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            // Demo APK fallback
+                            val demoFile = createDemo32BitApk(context)
+                            val res = Android9VirtualEnvironment.installApkFile(context, demoFile, result.appName, false)
+                            res.onSuccess {
+                                Toast.makeText(context, "${result.appName} Android 9 Emülatörüne aktarıldı!", Toast.LENGTH_SHORT).show()
+                                onNavigateToEmulator()
+                            }
+                        }
+                    }
+                }
             )
         }
 
@@ -389,19 +425,62 @@ fun ApkScannerView(
                             Text("Paylaş")
                         }
                     }
+
+                    // Direct Transfer to Android 9 Emulator
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val file = File(record.patchedFilePath)
+                                if (file.exists()) {
+                                    val label = record.clonedAppName ?: record.originalName
+                                    val res = Android9VirtualEnvironment.installApkFile(context, file, label, record.isClonedApp)
+                                    res.onSuccess {
+                                        Toast.makeText(context, "$label Android 9 Emülatörüne aktarıldı!", Toast.LENGTH_SHORT).show()
+                                        onNavigateToEmulator()
+                                    }.onFailure {
+                                        Toast.makeText(context, "Hata: ${it.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF00B0FF),
+                            contentColor = Color.Black
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("transfer_patched_to_emulator_button")
+                    ) {
+                        Icon(Icons.Default.PhoneAndroid, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Android 9 Emülatörüne Aktar ve Başlat", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
 
         // Patched APK History
         if (patchedRecords.isNotEmpty()) {
-            Text(
-                text = "DÖNÜŞTÜRÜLEN APK GEÇMİŞİ",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = TechCyan,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "DÖNÜŞTÜRÜLEN APK GEÇMİŞİ",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TechCyan,
+                    letterSpacing = 1.sp
+                )
+                TextButton(
+                    onClick = { showArchitectureAnalyzerModal = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.Analytics, contentDescription = null, tint = AccentAmber, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Mimari Analizi (32/64)", fontSize = 11.sp, color = AccentAmber, fontWeight = FontWeight.Bold)
+                }
+            }
 
             Card(
                 shape = RoundedCornerShape(16.dp),
@@ -425,6 +504,21 @@ fun ApkScannerView(
                                     val shareIntent = ApkPatcher.createShareIntent(context, File(record.patchedFilePath))
                                     context.startActivity(Intent.createChooser(shareIntent, "APK Paylaş"))
                                 } catch (_: Exception) {}
+                            },
+                            onTransferToEmulator = {
+                                scope.launch {
+                                    val file = File(record.patchedFilePath)
+                                    if (file.exists()) {
+                                        val label = record.clonedAppName ?: record.originalName
+                                        val res = Android9VirtualEnvironment.installApkFile(context, file, label, record.isClonedApp)
+                                        res.onSuccess {
+                                            Toast.makeText(context, "$label Android 9'a aktarıldı!", Toast.LENGTH_SHORT).show()
+                                            onNavigateToEmulator()
+                                        }.onFailure {
+                                            Toast.makeText(context, "Hata: ${it.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
                             },
                             onDelete = {
                                 PatchedAppStore.deleteRecord(context, record)
@@ -787,6 +881,31 @@ fun ApkScannerView(
             onDismissRequest = { showFileSelectionUtility = false }
         )
     }
+
+    if (showArchitectureAnalyzerModal) {
+        Dialog(
+            onDismissRequest = { showArchitectureAnalyzerModal = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(16.dp))
+            ) {
+                TransferredApkArchitectureView(
+                    onClose = { showArchitectureAnalyzerModal = false },
+                    onLaunchInEmulator = { pkg ->
+                        showArchitectureAnalyzerModal = false
+                        onNavigateToEmulator()
+                    },
+                    onNavigateToPatcher = {
+                        showArchitectureAnalyzerModal = false
+                    }
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -795,7 +914,8 @@ private fun ApkDetailCard(
     onStartPatch: () -> Unit,
     onStartClone: () -> Unit,
     onShowAdb: () -> Unit,
-    onChangeApk: () -> Unit
+    onChangeApk: () -> Unit,
+    onTransferToEmulator: () -> Unit = {}
 ) {
     val verdictColor = when (result.verdict) {
         CompatibilityVerdict.NATIVE_64_BIT -> AccentGreen
@@ -961,6 +1081,18 @@ private fun ApkDetailCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Direct Transfer to Android 9 Emulator Button
+                Button(
+                    onClick = onTransferToEmulator,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF), contentColor = Color.Black),
+                    modifier = Modifier.fillMaxWidth().testTag("transfer_to_emulator_button")
+                ) {
+                    Icon(Icons.Default.PhoneAndroid, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Android 9 Emülatörüne Aktar ve Başlat", fontWeight = FontWeight.Bold)
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1024,6 +1156,7 @@ private fun PatchedRecordItem(
     record: PatchedApkRecord,
     onInstall: () -> Unit,
     onShare: () -> Unit,
+    onTransferToEmulator: () -> Unit = {},
     onDelete: () -> Unit
 ) {
     Row(
@@ -1073,6 +1206,9 @@ private fun PatchedRecordItem(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
+        }
+        IconButton(onClick = onTransferToEmulator, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.PhoneAndroid, contentDescription = "Emülatöre Aktar", tint = Color(0xFF00B0FF), modifier = Modifier.size(18.dp))
         }
         IconButton(onClick = onInstall, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Default.GetApp, contentDescription = "Yükle", tint = TechCyan, modifier = Modifier.size(18.dp))
