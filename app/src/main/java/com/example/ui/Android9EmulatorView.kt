@@ -45,6 +45,7 @@ import com.example.compat.Android9VirtualEnvironment
 import com.example.compat.PatchedAppStore
 import com.example.model.Android9VirtualApp
 import com.example.model.VirtualLogcatEntry
+import com.example.ui.emulator.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.io.File
